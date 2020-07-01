@@ -32,8 +32,8 @@ class TCN(nn.Sequential):
        for sequence modeling.
        arXiv preprint arXiv:1803.01271.
     """
-    def __init__(self, n_filters, n_blocks, kernel_size, drop_prob,
-                 in_chans, n_classes):
+    def __init__(self, in_chans, n_classes, n_blocks, n_filters, kernel_size,
+                 drop_prob):
         super().__init__()
         self.add_module("ensuredims", Ensure4d())
         t_blocks = nn.Sequential()
@@ -73,7 +73,8 @@ class TCN(nn.Sequential):
         fc_out = fc_out.view(batch_size, time_size, fc_out.size(1))
 
         out_size = 1 + max(0, time_size - self.min_len)
-        return fc_out[:, -out_size:, :].transpose(1, 2).contiguous()
+        out = fc_out[:, -out_size:, :].transpose(1, 2)
+        return self.squeeze(out)
 
 
 class _TemporalBlock(nn.Module):
