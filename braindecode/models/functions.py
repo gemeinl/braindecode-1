@@ -24,9 +24,10 @@ def squeeze_final_output(x):
     x: torch.Tensor
         squeezed tensor
     """
-
-    assert x.size()[3] == 1
-    x = x[:, :, :, 0]
+    if x.ndim == 4:
+        assert x.size()[3] == 1
+        x = x[:, :, :, 0]
+    assert x.ndim == 3
     if x.size()[2] == 1:
         x = x[:, :, 0]
     return x
