@@ -1,67 +1,72 @@
-import torch
 from torch import nn
+from torch.nn import init
 from torch.nn.utils import weight_norm
 
 from .modules import Ensure4d, Expression
 from .functions import squeeze_final_output
 
 
-class TemporalConvNet(nn.Sequential):
-    """Temporal Convolutional Network
+class TCN(nn.Sequential):
+    """Temporal Convolutional Network (TCN) as described in [1]_.
+    Code adapted from https://github.com/locuslab/TCN/blob/master/TCN/tcn.py
 
     Parameters
     ----------
-    num_blocks: int
+    in_chans: int
+        number of input EEG channels
+    n_classes: int
+        number of different classes of the decoding task
+    n_filters: int
+        number of output filters of each convolution
+    n_blocks: int
         number of temporal blocks in the network
-    input_size: int
-        number of input channels
-    output_size: int
-    num_channels: int
-        number of output channels of each convolution
     kernel_size: int
-        size of the convolutions
+        kernel size of the convolutions
     drop_prob: float
         dropout probability
+
+    References
+    ----------
+    .. [1] Bai, S., Kolter, J. Z., & Koltun, V. (2018).
+       An empirical evaluation of generic convolutional and recurrent networks
+       for sequence modeling.
+       arXiv preprint arXiv:1803.01271.
     """
-    def __init__(self, num_channels, num_blocks, kernel_size, drop_prob,
-                 input_size, output_size):
+    def __init__(self, n_filters, n_blocks, kernel_size, drop_prob,
+                 in_chans, n_classes):
         super().__init__()
         self.add_module("ensuredims", Ensure4d())
-        temporal_blocks = nn.Sequential()
-        for i in range(num_blocks):
+        t_blocks = nn.Sequential()
+        for i in range(n_blocks):
+            n_inputs = in_chans if i == 0 else n_filters
             dilation_size = 2 ** i
-            in_channels = input_size if i == 0 else num_channels
-            temporal_blocks.add_module(
-                "temp_block_{:d}".format(i), _TemporalBlock(
-                    in_channels, num_channels, kernel_size,
-                    stride=1, dilation=dilation_size,
-                    padding=(kernel_size - 1) * dilation_size, drop_prob=drop_prob
+            t_blocks.add_module("temporal_block_{:d}".format(i), _TemporalBlock(
+                    n_inputs=n_inputs,
+                    n_outputs=n_filters,
+                    kernel_size=kernel_size,
+                    stride=1,
+                    dilation=dilation_size,
+                    padding=(kernel_size - 1) * dilation_size,
+                    drop_prob=drop_prob
                 ))
-        self.add_module("temporal_blocks", temporal_blocks)
-        self.fc = nn.Linear(
-            in_features=num_channels, out_features=output_size, bias=True)
+        self.temporal_blocks = t_blocks
+        self.fc = nn.Linear(in_features=n_filters, out_features=n_classes)
         self.log_softmax = nn.LogSoftmax(dim=1)
-        self.add_module("squeeze", Expression(squeeze_final_output))
+        self.squeeze = Expression(squeeze_final_output)
 
         self.min_len = 1
-        for i in range(num_blocks):
+        for i in range(n_blocks):
             dilation = 2 ** i
             self.min_len += 2 * (kernel_size - 1) * dilation
 
     def forward(self, x):
-        # TODO: clean this up
-        batch_size = x.size(0)
-        time_size = x.size(2)
-        # RNN format: N x L x C
-        # Transpose to CNN format:  N x C x L
-        # x = transpose(x, 1, 2)
-        print(x.shape)
-        x = x.squeeze(-1)
-        print(x.shape)
+        # x is in format: B x C x T x 1
+        (batch_size, _, time_size, _) = x.size()
+        # remove empty trailing dimension
+        x = x.squeeze(3)
         x = self.temporal_blocks(x)
-        print(x.shape)
-        # RNN format: N x L x C
-        x = torch.transpose(x, 1, 2).contiguous()
+        # Convert to: B x T x C
+        x = x.transpose(1, 2).contiguous()
 
         fc_out = self.fc(x.view(batch_size * time_size, x.size(2)))
         fc_out = self.log_softmax(fc_out)
@@ -89,15 +94,14 @@ class _TemporalBlock(nn.Module):
         self.relu2 = nn.ReLU()
         self.dropout2 = nn.Dropout2d(drop_prob)
 
-        self.downsample = nn.Conv1d(n_inputs, n_outputs, 1) if n_inputs != n_outputs else None
+        self.downsample = (nn.Conv1d(n_inputs, n_outputs, 1)
+                           if n_inputs != n_outputs else None)
         self.relu = nn.ReLU()
-        self.init_weights()
 
-    def init_weights(self):
-        self.conv1.weight.data.normal_(0, 0.01)
-        self.conv2.weight.data.normal_(0, 0.01)
+        init.normal_(self.conv1.weight, 0, 0.01)
+        init.normal_(self.conv2.weight, 0, 0.01)
         if self.downsample is not None:
-            self.downsample.weight.data.normal_(0, 0.01)
+            init.normal_(self.downsample.weight, 0, 0.01)
 
     def forward(self, x):
         out = self.conv1(x)
