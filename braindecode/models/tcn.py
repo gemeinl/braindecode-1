@@ -74,7 +74,7 @@ class TCN(nn.Sequential):
 
         out_size = 1 + max(0, time_size - self.min_len)
         out = fc_out[:, -out_size:, :].transpose(1, 2)
-        return self.squeeze(out)
+        return self.squeeze(out[:, :, :, None])
 
 
 class _TemporalBlock(nn.Module):
