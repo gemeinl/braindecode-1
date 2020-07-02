@@ -59,6 +59,9 @@ class TCN(nn.Sequential):
             dilation = 2 ** i
             self.min_len += 2 * (kernel_size - 1) * dilation
 
+        # start in eval mode
+        self.eval()
+
     def forward(self, x):
         # x is in format: B x C x T x 1
         (batch_size, _, time_size, _) = x.size()
@@ -74,6 +77,7 @@ class TCN(nn.Sequential):
 
         out_size = 1 + max(0, time_size - self.min_len)
         out = fc_out[:, -out_size:, :].transpose(1, 2)
+        # re-add 4th dimension for compatibility with braindecode
         return self.squeeze(out[:, :, :, None])
 
 
