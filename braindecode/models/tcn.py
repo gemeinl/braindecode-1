@@ -14,7 +14,7 @@ class TCN(nn.Sequential):
     ----------
     in_chans: int
         number of input EEG channels
-    n_ouputs: int
+    n_outputs: int
         number of outputs of the decoding task
     n_filters: int
         number of output filters of each convolution
