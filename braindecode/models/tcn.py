@@ -14,8 +14,8 @@ class TCN(nn.Sequential):
     ----------
     in_chans: int
         number of input EEG channels
-    n_classes: int
-        number of different classes of the decoding task
+    n_ouputs: int
+        number of outputs of the decoding task
     n_filters: int
         number of output filters of each convolution
     n_blocks: int
@@ -32,10 +32,10 @@ class TCN(nn.Sequential):
        for sequence modeling.
        arXiv preprint arXiv:1803.01271.
     """
-    def __init__(self, in_chans, n_classes, n_blocks, n_filters, kernel_size,
-                 drop_prob):
+    def __init__(self, in_chans, n_outputs, n_blocks, n_filters, kernel_size,
+                 drop_prob, add_log_softmax):
         super().__init__()
-        self.add_module("ensuredims", Ensure4d())
+        self.ensuredims = Ensure4d()
         t_blocks = nn.Sequential()
         for i in range(n_blocks):
             n_inputs = in_chans if i == 0 else n_filters
@@ -50,8 +50,9 @@ class TCN(nn.Sequential):
                     drop_prob=drop_prob
                 ))
         self.temporal_blocks = t_blocks
-        self.fc = nn.Linear(in_features=n_filters, out_features=n_classes)
-        self.log_softmax = nn.LogSoftmax(dim=1)
+        self.fc = nn.Linear(in_features=n_filters, out_features=n_outputs)
+        if add_log_softmax:
+            self.log_softmax = nn.LogSoftmax(dim=1)
         self.squeeze = Expression(squeeze_final_output)
 
         self.min_len = 1
@@ -72,7 +73,8 @@ class TCN(nn.Sequential):
         x = x.transpose(1, 2).contiguous()
 
         fc_out = self.fc(x.view(batch_size * time_size, x.size(2)))
-        fc_out = self.log_softmax(fc_out)
+        if hasattr(self, "log_softmax"):
+            fc_out = self.log_softmax(fc_out)
         fc_out = fc_out.view(batch_size, time_size, fc_out.size(1))
 
         out_size = 1 + max(0, time_size - self.min_len)
