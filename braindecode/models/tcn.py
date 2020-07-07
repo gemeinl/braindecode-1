@@ -1,3 +1,8 @@
+# Authors: Patryk Chrabaszs
+#          Lukas Gemein <l.gemein@gmail.com>
+#
+# License: BSD-3
+
 from torch import nn
 from torch.nn import init
 from torch.nn.utils import weight_norm
@@ -12,10 +17,11 @@ class TCN(nn.Sequential):
 
     Parameters
     ----------
-    in_chans: int
+    n_in_chans: int
         number of input EEG channels
     n_outputs: int
-        number of outputs of the decoding task
+        number of outputs of the decoding task (for example number of classes in
+        classification)
     n_filters: int
         number of output filters of each convolution
     n_blocks: int
@@ -24,6 +30,8 @@ class TCN(nn.Sequential):
         kernel size of the convolutions
     drop_prob: float
         dropout probability
+    add_log_softmax: bool
+        whether to add a log softmax layer
 
     References
     ----------
@@ -32,15 +40,15 @@ class TCN(nn.Sequential):
        for sequence modeling.
        arXiv preprint arXiv:1803.01271.
     """
-    def __init__(self, in_chans, n_outputs, n_blocks, n_filters, kernel_size,
+    def __init__(self, n_in_chans, n_outputs, n_blocks, n_filters, kernel_size,
                  drop_prob, add_log_softmax):
         super().__init__()
         self.ensuredims = Ensure4d()
         t_blocks = nn.Sequential()
         for i in range(n_blocks):
-            n_inputs = in_chans if i == 0 else n_filters
+            n_inputs = n_in_chans if i == 0 else n_filters
             dilation_size = 2 ** i
-            t_blocks.add_module("temporal_block_{:d}".format(i), _TemporalBlock(
+            t_blocks.add_module("temporal_block_{:d}".format(i), TemporalBlock(
                     n_inputs=n_inputs,
                     n_outputs=n_filters,
                     kernel_size=kernel_size,
@@ -83,21 +91,21 @@ class TCN(nn.Sequential):
         return self.squeeze(out[:, :, :, None])
 
 
-class _TemporalBlock(nn.Module):
+class TemporalBlock(nn.Sequential):
     def __init__(self, n_inputs, n_outputs, kernel_size, stride, dilation,
                  padding, drop_prob):
         super().__init__()
         self.conv1 = weight_norm(nn.Conv1d(
             n_inputs, n_outputs, kernel_size,
             stride=stride, padding=padding, dilation=dilation))
-        self.chomp1 = _Chomp1d(padding)
+        self.chomp1 = Chomp1d(padding)
         self.relu1 = nn.ReLU()
         self.dropout1 = nn.Dropout2d(drop_prob)
 
         self.conv2 = weight_norm(nn.Conv1d(
             n_outputs, n_outputs, kernel_size,
             stride=stride, padding=padding, dilation=dilation))
-        self.chomp2 = _Chomp1d(padding)
+        self.chomp2 = Chomp1d(padding)
         self.relu2 = nn.ReLU()
         self.dropout2 = nn.Dropout2d(drop_prob)
 
@@ -123,7 +131,7 @@ class _TemporalBlock(nn.Module):
         return self.relu(out + res)
 
 
-class _Chomp1d(nn.Module):
+class Chomp1d(nn.Module):
     def __init__(self, chomp_size):
         super().__init__()
         self.chomp_size = chomp_size
