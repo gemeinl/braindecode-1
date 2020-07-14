@@ -24,11 +24,6 @@ install:
   - pip install --upgrade git+https://github.com/NeuroTechX/moabb
   - pip install -e .
 
-addons:
-  apt:
-    packages:
-      - libssl1.0.0
-
 # command to run tests
 script:
   - pytest --cov=braindecode test/
