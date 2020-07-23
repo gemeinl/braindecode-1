@@ -17,21 +17,28 @@ class TUHAbnormal(BaseConcatDataset):
     path: str
         parent directory of the dataset
     recording_ids: list(int) | int
-        (list of) int of recording(s) to be read
+        (list of) int of recording(s) to be read (order matters and will
+        overwrite default chronological order, e.g. if recording_ids=[1,0],
+        then the first recording returned by this class will be chronologically
+        later then the second recording. provide recording_ids in ascending
+        order to preserve chronological order)
     target_name: str
         can be 'pathological', 'gender', or 'age'
     preload: bool
         if True, preload the data of the Raw objects.
+    add_physician_reports: bool
+        if True, the physician reports will be read from disk and added to the
+        description
     """
     def __init__(self, path, recording_ids=None, target_name="pathological",
-                 preload=False):
+                 preload=False, add_physician_reports=False):
         all_file_paths = read_all_file_names(
             path, extension='.edf', key=self._time_key)
         if recording_ids is None:
             recording_ids = np.arange(len(all_file_paths))
 
         all_base_ds = []
-        for recording_id in recording_ids:
+        for i, recording_id in enumerate(recording_ids):
             file_path = all_file_paths[recording_id]
             raw = mne.io.read_raw_edf(file_path, preload=preload)
             path_splits = file_path.split("/")
@@ -48,12 +55,17 @@ class TUHAbnormal(BaseConcatDataset):
             age, gender = _parse_age_and_gender_from_edf_header(file_path)
             # see https://www.isip.piconepress.com/projects/tuh_eeg/downloads/tuh_eeg_abnormal/v2.0.0/_AAREADME.txt
             subject_id = path_splits[-3]
-            description = pd.Series(
-                {'age': age, 'pathological': pathological, 'gender': gender,
-                'session': session, 'subject': subject_id}, name=recording_id)
+            d = {'age': age, 'pathological': pathological, 'gender': gender,
+                 'session': session, 'subject': subject_id,
+                 'recording_id': recording_id}
+            if add_physician_reports:
+                report_path = "_".join(file_path.split("_")[:-1]) + ".txt"
+                with open(report_path, "r", encoding="latin-1") as f:
+                    physician_report = f.read()
+                d["physician_report"] = physician_report
+            description = pd.Series(d, name=i)
             base_ds = BaseDataset(raw, description, target_name=target_name)
             all_base_ds.append(base_ds)
-
         super().__init__(all_base_ds)
 
     @staticmethod
