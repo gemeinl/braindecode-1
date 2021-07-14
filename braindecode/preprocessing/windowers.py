@@ -180,7 +180,7 @@ def create_fixed_length_windows(
         drop_last_window)
 
     # check if recordings are of different lengths
-    lengths = np.array([ds.raw.n_times - ds.raw.first_samp for ds in concat_ds.datasets])
+    lengths = np.array([ds.raw.n_times for ds in concat_ds.datasets])
     if (np.diff(lengths) != 0).any():
         warnings.warn('Recordings have different lengths, they will not be batch-able!')
     if any(window_size_samples > lengths):
